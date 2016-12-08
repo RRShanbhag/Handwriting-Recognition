@@ -1,5 +1,6 @@
 import os
 import re
+from numpy import random
 from queue import Queue
 from threading import Thread
 
@@ -9,9 +10,24 @@ import numpy as np
 import matplotlib.pyplot as plot
 import sys
 
+# os.environ['THEANO_FLAGS'] = "device=cpu1"
+os.environ['OMP_NUM_THREADS'] = "5"
+import theano
+
+theano.config.floatX = 'float32'
+
+from keras.layers.convolutional import Convolution2D
+from keras.layers.core import Dropout, Flatten, Dense
+from keras.layers.pooling import MaxPooling2D
+from keras.models import Sequential
+
 image_path = 'iamDB/data/forms'
 
 thread_queue = Queue(10)
+
+ascii_fp = open('/home/varunbhat/workspace/ml_project/iamDB/data/ascii/words.txt')
+word_data = ascii_fp.read()
+ascii_fp.close()
 
 
 class HandwritingRecognition:
@@ -20,17 +36,17 @@ class HandwritingRecognition:
         self.image_id = image_path.split('/')[-1].split('.')[-2]
         self.image = None
         self.debug = False
-        self.read_image(image_path)
+        self.image = None
         self.y_offset = (620, 2800)
-        self.x_offset = (0, self.image.shape[1])
+        self.x_offset = (0, -1)
         self.segments = []
-        ascii_fp = open('/home/varunbhat/workspace/ml_project/iamDB/data/ascii/words.txt')
-        self.word_data = ascii_fp.read()
-        ascii_fp.close()
-
         self.dataset_segments = []
+        self.dataset_labels = []
 
     def segment(self):
+        self.read_image(image_path) if self.image is None else 1
+        self.y_offset = (620, 2800)
+        self.x_offset = (0, self.image.shape[1])
         temp_image = np.copy(self.image)
         temp_image = temp_image[self.y_offset[0]:self.y_offset[1], self.x_offset[0]:self.x_offset[1]]
         temp_image = cv2.blur(temp_image, (30, 30))
@@ -146,8 +162,8 @@ class HandwritingRecognition:
                 arr.append(self.image[y_s - 6:y_e + 6, x_s + 3:x_e + 3])
         return arr
 
-    def read_dataset_segmentation(self):
-        rows = re.findall('(%s.*)' % self.image_id, self.word_data)
+    def read_dataset_segmentation(self, word_dataset):
+        rows = re.findall('(%s-.*)' % self.image_id, word_dataset)
         rexp = re.compile(
             '(?P<id>[a-z0-9\-]+) (?P<status>err|ok) (?P<threshold>\d+) (?P<coordinates>([\d\-]+ ){4})'
             '(?P<typeset>.*?) (?P<word>.*)')
@@ -155,8 +171,42 @@ class HandwritingRecognition:
             res = rexp.match(data)
             if res is None:
                 continue
-            x, y, w, h = (int(_i) for _i in res.group('coordinates').split(' ')[:4])
-            self.show_image(self.image[y:y + h, x:x + w])
+            if res.group('status') == 'ok':
+                x, y, w, h = (int(_i) for _i in res.group('coordinates').split(' ')[:4])
+                self.dataset_segments.append(((y, y + h), (x, x + h)))
+                self.dataset_labels.append(res.group('word'))
+                # self.show_image(self.image[y:y + h, x:x + w])
+            else:
+                continue
+
+    def get_dataset_segmentation(self):
+        return (self.dataset_labels, self.dataset_segments)
+
+
+class ConvNet:
+    def __init__(self):
+        self.model = Sequential()
+        self.model.add(Convolution2D(30, 5, 5, border_mode='valid', input_shape=(1, 128, 128), activation='relu'))
+        self.model.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2)))
+        self.model.add(Convolution2D(15, 3, 3, activation='relu'))
+        self.model.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2)))
+        self.model.add(Convolution2D(10, 2, 2, activation='relu'))
+        self.model.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2)))
+        self.model.add(Dropout(0.5))
+        self.model.add(Flatten())
+        self.model.add(Dense(128, activation='relu'))
+        self.model.add(Dense(50, activation='relu'))
+        self.model.add(Dense(80, activation='softmax'))
+        self.model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+
+    def set_training(self, tset):
+        # self.image_refs = []
+        # for hclass  in tset:
+        #     hclass
+        pass
+
+    def set_validation(self, vset):
+        pass
 
 
 def segment(pth):
@@ -165,14 +215,15 @@ def segment(pth):
     for img in hreco.get_segmented_image_array():
         if not os.path.exists(os.path.join('segmented', pth)):
             os.mkdir(os.path.join('segmented', pth))
-
         cv2.imwrite(os.path.join('segmented', pth, '%d.png' % count), img)
         count += 1
 
 
 def read_dataset(path):
+    global word_data
     hreco = HandwritingRecognition(os.path.join(image_path, pth))
-    hreco.read_dataset_segmentation()
+    hreco.read_dataset_segmentation(word_data)
+    return hreco
 
 
 def dispacher():
@@ -181,12 +232,26 @@ def dispacher():
         t.start()
 
 
+# if __name__ == '__main__':
+#     # Thread(target=dispacher).start()
+#     dataset = []
+#     for pth in os.listdir(image_path):
+#         if 'png' not in pth:
+#             continue
+#         print(pth)
+#         dataset.append(read_dataset(pth))
+#         # thread_queue.put(Thread(target=segment, args=(pth,)))
+#         # segment(pth)
+
 if __name__ == '__main__':
-    # Thread(target=dispacher).start()
+    dataset = []
     for pth in os.listdir(image_path):
         if 'png' not in pth:
             continue
-        print(pth)
-        # thread_queue.put(Thread(target=segment, args=(pth,)))
-        # segment(pth)
-        read_dataset(pth)
+        dataset.append(read_dataset(pth))
+        print("Reading:", pth)
+
+    random.shuffle(dataset)
+    cnn = ConvNet()
+    cnn.set_training(dataset[:int(len(dataset) * .8)])
+    cnn.set_validation(cnn.set_training(dataset[int(len(dataset) * .8):]))
