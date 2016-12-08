@@ -172,6 +172,10 @@ class HandwritingRecognition:
     def get_segmented_images(self):
         return self.get_segmented_image_array(self.segments)
 
+    @classmethod
+    def get_letters(cls, image, label):
+        pass
+
     def read_dataset_segmentation(self, word_dataset):
         self.read_image(self.image_path) if self.image is None else 1
         rows = re.findall('(%s-.*)' % self.image_id, word_dataset)
@@ -227,6 +231,7 @@ class ConvNet:
         self.model.add(Dense(50, activation='relu'))
         self.model.add(Dense(80, activation='softmax'))
         self.model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+
         self.training_image_refs = []
         self.training_labels = []
         self.test_image_refs = []
@@ -236,7 +241,7 @@ class ConvNet:
         self.training_image_refs = []
         self.training_labels = []
         for hclass in tset:
-            self.training_labels.append(hclass.get_dataset_labels())
+            self.training_labels += hclass.get_dataset_labels()
             self.training_image_refs.append(hclass.get_segmented_dataset_images())
 
     def set_validation(self, vset):
@@ -255,7 +260,6 @@ class ConvNet:
                         continue
                     ar = (int(28 * img.shape[1] / img.shape[0]), 28)
                     form_imgs[i] = cv2.resize(img, ar)
-                    # HandwritingRecognition.show(form_imgs[i])
 
 
 def segment(pth):
