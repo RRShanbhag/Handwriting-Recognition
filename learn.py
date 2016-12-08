@@ -21,7 +21,7 @@ from keras.layers.core import Dropout, Flatten, Dense
 from keras.layers.pooling import MaxPooling2D
 from keras.models import Sequential
 
-image_path = 'iamDB/data/forms'
+image_path = 'iamDB/data/forms1'
 
 thread_queue = Queue(10)
 
@@ -44,7 +44,7 @@ class HandwritingRecognition:
         self.dataset_labels = []
 
     def segment(self):
-        self.read_image(image_path) if self.image is None else 1
+        self.read_image(self.image_path) if self.image is None else 1
         self.y_offset = (620, 2800)
         self.x_offset = (0, self.image.shape[1])
         temp_image = np.copy(self.image)
@@ -155,32 +155,53 @@ class HandwritingRecognition:
             for ((y_s, y_e), (x_s, x_e)) in line:
                 self.show_image(self.image[y_s:y_e, x_s:x_e])
 
-    def get_segmented_image_array(self):
+    def get_segmented_image_array(self, segments):
         arr = []
-        for line in self.segments:
+        for line in segments:
             for ((y_s, y_e), (x_s, x_e)) in line:
                 arr.append(self.image[y_s - 6:y_e + 6, x_s + 3:x_e + 3])
         return arr
 
+    def get_segmented_dataset_images(self):
+        return self.get_segmented_image_array(self.dataset_segments)
+
+    def get_segmented_images(self):
+        return self.get_segmented_image_array(self.segments)
+
     def read_dataset_segmentation(self, word_dataset):
+        self.read_image(self.image_path) if self.image is None else 1
         rows = re.findall('(%s-.*)' % self.image_id, word_dataset)
         rexp = re.compile(
             '(?P<id>[a-z0-9\-]+) (?P<status>err|ok) (?P<threshold>\d+) (?P<coordinates>([\d\-]+ ){4})'
             '(?P<typeset>.*?) (?P<word>.*)')
+
+        dataset = []
+        labels = []
         for data in rows:
             res = rexp.match(data)
             if res is None:
                 continue
             if res.group('status') == 'ok':
                 x, y, w, h = (int(_i) for _i in res.group('coordinates').split(' ')[:4])
-                self.dataset_segments.append(((y, y + h), (x, x + h)))
-                self.dataset_labels.append(res.group('word'))
+                dataset.append(((y, y + h), (x, x + h)))
+                labels.append(res.group('word'))
                 # self.show_image(self.image[y:y + h, x:x + w])
             else:
                 continue
+        self.dataset_segments.append(dataset)
+        self.dataset_labels.append(labels)
 
     def get_dataset_segmentation(self):
-        return (self.dataset_labels, self.dataset_segments)
+        return self.dataset_labels, self.dataset_segments
+
+    def get_dataset_labels(self):
+        return self.dataset_labels
+
+    @classmethod
+    def show(clf, image, window='image'):
+        cv2.imshow(window, image)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
 
 
 class ConvNet:
@@ -198,30 +219,54 @@ class ConvNet:
         self.model.add(Dense(50, activation='relu'))
         self.model.add(Dense(80, activation='softmax'))
         self.model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+        self.training_image_refs = []
+        self.training_labels = []
+        self.test_image_refs = []
+        self.test_labels = []
 
     def set_training(self, tset):
-        # self.image_refs = []
-        # for hclass  in tset:
-        #     hclass
-        pass
+        self.training_image_refs = []
+        self.training_labels = []
+        for hclass in tset:
+            self.training_labels.append(hclass.get_dataset_labels())
+            self.training_image_refs.append(hclass.get_segmented_dataset_images())
 
     def set_validation(self, vset):
-        pass
+        self.test_image_refs = []
+        self.test_labels = []
+        for hclass in vset:
+            self.test_labels.append(hclass.get_dataset_labels())
+            self.test_image_refs.append(hclass.get_segmented_dataset_images())
+
+    def format_images(self):
+        for ds in [self.training_image_refs, self.test_image_refs]:
+            for j, form_imgs in enumerate(ds):
+                for i, img in enumerate(form_imgs):
+                    if 0 in img.shape:
+                        form_imgs[i] = None
+                        continue
+                    ar = (int(28 * img.shape[1] / img.shape[0]), 28) if img.shape[0] < 28 is not 0 else (28, 28)
+                    form_imgs[i] = cv2.resize(img, ar)
+                    print(self.training_labels)
+                    HandwritingRecognition.show(img)
+        print(self.training_image_refs)
 
 
 def segment(pth):
     hreco = HandwritingRecognition(os.path.join(image_path, pth))
-    count = 1
-    for img in hreco.get_segmented_image_array():
-        if not os.path.exists(os.path.join('segmented', pth)):
-            os.mkdir(os.path.join('segmented', pth))
-        cv2.imwrite(os.path.join('segmented', pth, '%d.png' % count), img)
-        count += 1
+    hreco.segment()
+    hreco.show_segmented_words()
+    # count = 1
+    # for img in hreco.get_segmented_image_array():
+    #     if not os.path.exists(os.path.join('segmented', pth)):
+    #         os.mkdir(os.path.join('segmented', pth))
+    #     cv2.imwrite(os.path.join('segmented', pth, '%d.png' % count), img)
+    #     count += 1
 
 
 def read_dataset(path):
     global word_data
-    hreco = HandwritingRecognition(os.path.join(image_path, pth))
+    hreco = HandwritingRecognition(os.path.join(image_path, path))
     hreco.read_dataset_segmentation(word_data)
     return hreco
 
@@ -238,10 +283,10 @@ def dispacher():
 #     for pth in os.listdir(image_path):
 #         if 'png' not in pth:
 #             continue
-#         print(pth)
+#         # print(pth)
 #         dataset.append(read_dataset(pth))
 #         # thread_queue.put(Thread(target=segment, args=(pth,)))
-#         # segment(pth)
+#         segment(pth)
 
 if __name__ == '__main__':
     dataset = []
@@ -254,4 +299,5 @@ if __name__ == '__main__':
     random.shuffle(dataset)
     cnn = ConvNet()
     cnn.set_training(dataset[:int(len(dataset) * .8)])
-    cnn.set_validation(cnn.set_training(dataset[int(len(dataset) * .8):]))
+    cnn.set_validation(dataset[int(len(dataset) * .8):])
+    cnn.format_images()
