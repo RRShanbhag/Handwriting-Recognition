@@ -1,10 +1,13 @@
 import os
+import re
 from queue import Queue
 from threading import Thread
 
 import cv2
+import math
 import numpy as np
 import matplotlib.pyplot as plot
+import sys
 
 image_path = 'iamDB/data/forms'
 
@@ -13,17 +16,22 @@ thread_queue = Queue(10)
 
 class HandwritingRecognition:
     def __init__(self, image_path):
+        self.image_path = image_path
+        self.image_id = image_path.split('/')[-1].split('.')[-2]
         self.image = None
         self.debug = False
         self.read_image(image_path)
-        # self.y_offset = (int(self.image.shape[1] * .03), int(self.image.shape[1] * .97))
         self.y_offset = (620, 2800)
         self.x_offset = (0, self.image.shape[1])
-        temp_image = np.copy(self.image)
-        # temp_image_uncropped = np.copy(self.image)
-        # temp_image_uncropped = cv2.blur(temp_image_uncropped, (30, 30))
-        # temp_image_uncropped = self.normalize(temp_image_uncropped)
+        self.segments = []
+        ascii_fp = open('/home/varunbhat/workspace/ml_project/iamDB/data/ascii/words.txt')
+        self.word_data = ascii_fp.read()
+        ascii_fp.close()
 
+        self.dataset_segments = []
+
+    def segment(self):
+        temp_image = np.copy(self.image)
         temp_image = temp_image[self.y_offset[0]:self.y_offset[1], self.x_offset[0]:self.x_offset[1]]
         temp_image = cv2.blur(temp_image, (30, 30))
         temp_image = self.normalize(temp_image)
@@ -96,9 +104,7 @@ class HandwritingRecognition:
         t_image = start_image
 
         # self.show_image(t_image * 255)
-
         # print(t_image.shape[0])
-
         #  Get the histogram of the data
         # if t_image.shape[0] < 10 or t_image.shape[1] < 10:
         #     return []
@@ -140,6 +146,18 @@ class HandwritingRecognition:
                 arr.append(self.image[y_s - 6:y_e + 6, x_s + 3:x_e + 3])
         return arr
 
+    def read_dataset_segmentation(self):
+        rows = re.findall('(%s.*)' % self.image_id, self.word_data)
+        rexp = re.compile(
+            '(?P<id>[a-z0-9\-]+) (?P<status>err|ok) (?P<threshold>\d+) (?P<coordinates>([\d\-]+ ){4})'
+            '(?P<typeset>.*?) (?P<word>.*)')
+        for data in rows:
+            res = rexp.match(data)
+            if res is None:
+                continue
+            x, y, w, h = (int(_i) for _i in res.group('coordinates').split(' ')[:4])
+            self.show_image(self.image[y:y + h, x:x + w])
+
 
 def segment(pth):
     hreco = HandwritingRecognition(os.path.join(image_path, pth))
@@ -152,6 +170,11 @@ def segment(pth):
         count += 1
 
 
+def read_dataset(path):
+    hreco = HandwritingRecognition(os.path.join(image_path, pth))
+    hreco.read_dataset_segmentation()
+
+
 def dispacher():
     while True:
         t = thread_queue.get()
@@ -159,8 +182,11 @@ def dispacher():
 
 
 if __name__ == '__main__':
-    Thread(target=dispacher).start()
+    # Thread(target=dispacher).start()
     for pth in os.listdir(image_path):
+        if 'png' not in pth:
+            continue
         print(pth)
-        thread_queue.put(Thread(target=segment, args=(pth,)))
+        # thread_queue.put(Thread(target=segment, args=(pth,)))
         # segment(pth)
+        read_dataset(pth)
