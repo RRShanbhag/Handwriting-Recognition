@@ -32,7 +32,7 @@ class HandwritingRecognition:
         x_segments = []
         for s, e in y_segments:
             temp_image_cropped = np.copy(self.image[s:e, :])
-            temp_image_cropped = cv2.blur(temp_image_cropped, (30, 30))
+            temp_image_cropped = cv2.blur(temp_image_cropped, (50, 200))
             temp_image_cropped = self.normalize(temp_image_cropped)
             x_segments.append(self.segment_words(temp_image_cropped))
 
@@ -137,7 +137,7 @@ class HandwritingRecognition:
         arr = []
         for line in self.segments:
             for ((y_s, y_e), (x_s, x_e)) in line:
-                arr.append(self.image[y_s - 6:y_e + 6, x_s:x_e])
+                arr.append(self.image[y_s - 6:y_e + 6, x_s + 3:x_e + 3])
         return arr
 
 
