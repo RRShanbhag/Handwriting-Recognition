@@ -159,8 +159,12 @@ class HandwritingRecognition:
         arr = []
         for line in segments:
             for ((y_s, y_e), (x_s, x_e)) in line:
-                arr.append(self.image[y_s - 6:y_e + 6, x_s + 3:x_e + 3])
+                arr.append(self.image[y_s - 6:y_e + 6, x_s - 3:x_e + 3])
         return arr
+
+    def get_image_from_coordinates(self, coordinates):
+        ((y_s, y_e), (x_s, x_e)) = coordinates
+        return self.image[y_s - 6:y_e + 6, x_s - 3:x_e + 3]
 
     def get_segmented_dataset_images(self):
         return self.get_segmented_image_array(self.dataset_segments)
@@ -183,13 +187,17 @@ class HandwritingRecognition:
                 continue
             if res.group('status') == 'ok':
                 x, y, w, h = (int(_i) for _i in res.group('coordinates').split(' ')[:4])
-                dataset.append(((y, y + h), (x, x + h)))
+                dataset.append(((y, y + h), (x, x + w)))
                 labels.append(res.group('word'))
                 # self.show_image(self.image[y:y + h, x:x + w])
+                # self.show_image(self.get_image_from_coordinates(((y, y + h), (x, x + w))))
+                # data = self.get_image_from_coordinates(((y, y + h), (x, x + w)))
+                # data.shape()
             else:
                 continue
         self.dataset_segments.append(dataset)
         self.dataset_labels.append(labels)
+        self.show_segmented_words()
 
     def get_dataset_segmentation(self):
         return self.dataset_labels, self.dataset_segments
@@ -239,17 +247,15 @@ class ConvNet:
             self.test_image_refs.append(hclass.get_segmented_dataset_images())
 
     def format_images(self):
-        for ds in [self.training_image_refs, self.test_image_refs]:
-            for j, form_imgs in enumerate(ds):
+        for dm in [self.training_image_refs, self.test_image_refs]:
+            for j, form_imgs in enumerate(dm):
                 for i, img in enumerate(form_imgs):
                     if 0 in img.shape:
                         form_imgs[i] = None
                         continue
-                    ar = (int(28 * img.shape[1] / img.shape[0]), 28) if img.shape[0] < 28 is not 0 else (28, 28)
+                    ar = (int(28 * img.shape[1] / img.shape[0]), 28)
                     form_imgs[i] = cv2.resize(img, ar)
-                    print(self.training_labels)
-                    HandwritingRecognition.show(img)
-        print(self.training_image_refs)
+                    # HandwritingRecognition.show(form_imgs[i])
 
 
 def segment(pth):
