@@ -2,6 +2,8 @@ import os
 import re
 
 import gc
+
+from keras.utils import np_utils
 from numpy import random
 from queue import Queue
 from threading import Thread
@@ -283,20 +285,39 @@ class ConvNet:
             self.test_image_refs.append(hclass.get_segmented_dataset_images())
 
     def run(self):
-        self.create_model(len(list(self.training_class_letters.keys())))
         x_train = []
         y_train = []
         x_test = []
         y_test = []
+
         for k in self.training_class_letters.keys():
             x_train.append(self.training_class_letters[k])
-            y_train.append(k)
+            y_train.append(ord(k))
+
+        x_train = np.array(x_train)
+        y_train = np.array(y_train)
+
+        print(x_train.shape)
+        x_train.reshape(x_train.shape[0], 1, 28, 28).astype('float32')
+        y_train = np_utils.to_categorical(y_train)
 
         for k in self.test_class_letters.keys():
             x_test.append(self.test_class_letters[k])
             y_test.append(k)
 
+        x_test = np.array(x_test)
+        y_test = np.array(y_test)
+        x_test.reshape(x_test.shape[0], 1, 28, 28).astype('float32')
+        y_test = np_utils.to_categorical(y_test)
+
+        self.create_model(y_train.shape[1])
+
         self.model.fit(x_train, y_train, validation_data=(x_test, y_test), nb_epoch=50, batch_size=200, verbose=2)
+
+        y = self.model.predict_classes(x_train, batch_size=200, verbose=2)
+
+        print('=' * 100, '\n', 'y:', y)
+
         scores = self.model.evaluate(x_test, y_test, verbose=0)
         print("Baseline Error: %.2f%%" % (100 - scores[1] * 100))
 
