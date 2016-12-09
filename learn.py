@@ -158,7 +158,7 @@ class HandwritingRecognition:
                 self.show_image(self.image[y_s:y_e, x_s:x_e])
 
     def get_segmented_image_array(self, segments):
-        self.read_image(self.image_path)
+        self.read_image(self.image_path) if self.image is None else 1
         arr = []
         for line in segments:
             for ((y_s, y_e), (x_s, x_e)) in line:
@@ -245,8 +245,17 @@ class HandwritingRecognition:
 
 class ConvNet:
     def __init__(self):
+        self.model = None
+        self.training_image_refs = []
+        self.training_labels = []
+        self.test_image_refs = []
+        self.test_labels = []
+        self.test_class_letters = {}
+        self.training_class_letters = {}
+
+    def create_model(self, classes):
         self.model = Sequential()
-        self.model.add(Convolution2D(30, 5, 5, border_mode='valid', input_shape=(1, 128, 128), activation='relu'))
+        self.model.add(Convolution2D(30, 5, 5, border_mode='valid', input_shape=(1, 28, 28), activation='relu'))
         self.model.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2)))
         self.model.add(Convolution2D(15, 3, 3, activation='relu'))
         self.model.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2)))
@@ -256,15 +265,8 @@ class ConvNet:
         self.model.add(Flatten())
         self.model.add(Dense(128, activation='relu'))
         self.model.add(Dense(50, activation='relu'))
-        self.model.add(Dense(80, activation='softmax'))
+        self.model.add(Dense(classes, activation='softmax'))
         self.model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
-
-        self.training_image_refs = []
-        self.training_labels = []
-        self.test_image_refs = []
-        self.test_labels = []
-        self.test_class_letters = {}
-        self.training_class_letters = {}
 
     def set_training(self, tset):
         self.training_image_refs = []
@@ -280,11 +282,32 @@ class ConvNet:
             self.test_labels += hclass.get_dataset_labels()
             self.test_image_refs.append(hclass.get_segmented_dataset_images())
 
+    def run(self):
+        self.create_model(len(list(self.training_class_letters.keys())))
+        x_train = []
+        y_train = []
+        x_test = []
+        y_test = []
+        for k in self.training_class_letters.keys():
+            x_train.append(self.training_class_letters[k])
+            y_train.append(k)
+
+        for k in self.test_class_letters.keys():
+            x_test.append(self.test_class_letters[k])
+            y_test.append(k)
+
+        self.model.fit(x_train, y_train, validation_data=(x_test, y_test), nb_epoch=50, batch_size=200, verbose=2)
+        scores = self.model.evaluate(x_test, y_test, verbose=0)
+        print("Baseline Error: %.2f%%" % (100 - scores[1] * 100))
+
     def format_images(self, resize=28):
+        form_count = 0
         class_images = [self.training_class_letters, self.test_class_letters]
         labels_arr = [self.training_labels, self.test_labels]
         for k, dm in enumerate([self.training_image_refs, self.test_image_refs]):
             for j, form_imgs in enumerate(dm):
+                form_count += 1
+                print("Processing Image.. count:", form_count)
                 for i, img in enumerate(form_imgs):
                     if 0 in img.shape:
                         form_imgs[i] = None
@@ -292,11 +315,7 @@ class ConvNet:
                     ar = (int(resize * img.shape[1] / img.shape[0]), resize)
                     form_imgs[i] = cv2.resize(img, ar)
 
-                    try:
-                        letter_dict = HandwritingRecognition.get_letters(form_imgs[i], labels_arr[k][j][i])
-                    except IndexError as e:
-                        print(k, j, i)
-                        raise e
+                    letter_dict = HandwritingRecognition.get_letters(form_imgs[i], labels_arr[k][j][i])
 
                     for letter_cls in letter_dict.keys():
                         if letter_cls in class_images[k].keys():
@@ -360,3 +379,5 @@ if __name__ == '__main__':
     cnn.set_training(dataset[:int(len(dataset) * .8)])
     cnn.set_validation(dataset[int(len(dataset) * .8):])
     cnn.format_images()
+
+    cnn.run()
