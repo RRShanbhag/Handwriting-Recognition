@@ -21,7 +21,7 @@ from keras.layers.core import Dropout, Flatten, Dense
 from keras.layers.pooling import MaxPooling2D
 from keras.models import Sequential
 
-image_path = 'iamDB/data/forms1'
+image_path = 'iamDB/data/forms'
 
 thread_queue = Queue(10)
 
@@ -159,7 +159,7 @@ class HandwritingRecognition:
         arr = []
         for line in segments:
             for ((y_s, y_e), (x_s, x_e)) in line:
-                arr.append(self.image[y_s - 6:y_e + 6, x_s - 3:x_e + 3])
+                arr.append(self.image[y_s - 6:y_e + 6, x_s:x_e])
         return arr
 
     def get_image_from_coordinates(self, coordinates):
@@ -174,15 +174,35 @@ class HandwritingRecognition:
 
     @classmethod
     def get_letters(cls, image, label):
-        pass
+        padding = (int(((image.shape[0] + int(np.ceil((image.shape[1] / len(label)) *
+                                                      ((len(label) - 1) if len(label) > 1 else 1))))
+                        - image.shape[1]) / 2) + int(image.shape[0] / 2))
+        padding = padding if padding >= 0 else 0
+
+        x_loc = (np.linspace(0, image.shape[1], len(label)) + np.ones(len(label)) *
+                 (image.shape[1] / len(label) / 2)).astype(int)
+
+        windows = [(_x - int(np.ceil(image.shape[0] / 2)) + padding, _x + int(np.ceil(image.shape[0] / 2)) + padding)
+                   for _x in x_loc]
+        image = np.concatenate((np.ones((image.shape[0], padding), dtype=image.dtype) * 255, image), axis=1)
+        image = np.concatenate((image, np.ones((image.shape[0], padding), dtype=image.dtype) * 255), axis=1)
+
+        image_letter_segments = {}
+        for i, (x_l, x_h) in enumerate(windows):
+            image_letter_segments[label[i]] = []
+            for offset in range(3):
+                off_s = offset * int(image.shape[0] / 10)
+                image_letter_segments[label[i]].append(image[:, x_l - off_s:x_h - off_s])
+                image_letter_segments[label[i]].append(image[:, x_l + off_s:x_h + off_s])
+
+        return image_letter_segments
 
     def read_dataset_segmentation(self, word_dataset):
         self.read_image(self.image_path) if self.image is None else 1
         rows = re.findall('(%s-.*)' % self.image_id, word_dataset)
-        rexp = re.compile(
-            '(?P<id>[a-z0-9\-]+) (?P<status>err|ok) (?P<threshold>\d+) (?P<coordinates>([\d\-]+ ){4})'
-            '(?P<typeset>.*?) (?P<word>.*)')
-
+        rexp = re.compile('(?P<id>[a-z0-9\-]+) (?P<status>err|ok) '
+                          '(?P<threshold>\d+) (?P<coordinates>([\d\-]+ ){4})'
+                          '(?P<typeset>.*?) (?P<word>.*)')
         dataset = []
         labels = []
         for data in rows:
@@ -236,6 +256,8 @@ class ConvNet:
         self.training_labels = []
         self.test_image_refs = []
         self.test_labels = []
+        self.test_class_letters = {}
+        self.training_class_letters = {}
 
     def set_training(self, tset):
         self.training_image_refs = []
@@ -248,18 +270,37 @@ class ConvNet:
         self.test_image_refs = []
         self.test_labels = []
         for hclass in vset:
-            self.test_labels.append(hclass.get_dataset_labels())
+            self.test_labels += hclass.get_dataset_labels()
             self.test_image_refs.append(hclass.get_segmented_dataset_images())
 
-    def format_images(self):
-        for dm in [self.training_image_refs, self.test_image_refs]:
+    def format_images(self, resize=28):
+        class_images = [self.training_class_letters, self.test_class_letters]
+        labels_arr = [self.training_labels, self.test_labels]
+        for k, dm in enumerate([self.training_image_refs, self.test_image_refs]):
             for j, form_imgs in enumerate(dm):
                 for i, img in enumerate(form_imgs):
                     if 0 in img.shape:
                         form_imgs[i] = None
                         continue
-                    ar = (int(28 * img.shape[1] / img.shape[0]), 28)
+                    ar = (int(resize * img.shape[1] / img.shape[0]), resize)
                     form_imgs[i] = cv2.resize(img, ar)
+
+                    try:
+                        letter_dict = HandwritingRecognition.get_letters(form_imgs[i], labels_arr[k][j][i])
+                    except IndexError as e:
+                        print(k, j, i)
+                        raise e
+
+                    for letter_cls in letter_dict.keys():
+                        if letter_cls in class_images[k].keys():
+                            class_images[k][letter_cls].append(letter_dict[letter_cls])
+                        else:
+                            class_images[k][letter_cls] = [letter_dict[letter_cls]]
+
+        print("Training Letters:", len(self.training_class_letters.keys()))
+        print("Test Letters:", len(self.test_class_letters.keys()))
+        print('Training Image Count:', [len(self.training_class_letters[i]) for i in self.training_class_letters])
+        print('Test Image Count:', [len(self.test_class_letters[i]) for i in self.test_class_letters])
 
 
 def segment(pth):
