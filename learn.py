@@ -1,5 +1,7 @@
 import os
 import re
+
+import gc
 from numpy import random
 from queue import Queue
 from threading import Thread
@@ -21,7 +23,7 @@ from keras.layers.core import Dropout, Flatten, Dense
 from keras.layers.pooling import MaxPooling2D
 from keras.models import Sequential
 
-image_path = 'iamDB/data/forms'
+image_path = 'iamDB/data/forms1'
 
 thread_queue = Queue(10)
 
@@ -156,10 +158,13 @@ class HandwritingRecognition:
                 self.show_image(self.image[y_s:y_e, x_s:x_e])
 
     def get_segmented_image_array(self, segments):
+        self.read_image(self.image_path)
         arr = []
         for line in segments:
             for ((y_s, y_e), (x_s, x_e)) in line:
                 arr.append(self.image[y_s - 6:y_e + 6, x_s:x_e])
+        self.image = None
+        gc.collect()
         return arr
 
     def get_image_from_coordinates(self, coordinates):
@@ -221,7 +226,9 @@ class HandwritingRecognition:
                 continue
         self.dataset_segments.append(dataset)
         self.dataset_labels.append(labels)
-        self.show_segmented_words()
+        self.image = None
+        gc.collect()
+        # self.show_segmented_words()
 
     def get_dataset_segmentation(self):
         return self.dataset_labels, self.dataset_segments
@@ -299,8 +306,9 @@ class ConvNet:
 
         print("Training Letters:", len(self.training_class_letters.keys()))
         print("Test Letters:", len(self.test_class_letters.keys()))
-        print('Training Image Count:', [len(self.training_class_letters[i]) for i in self.training_class_letters])
-        print('Test Image Count:', [len(self.test_class_letters[i]) for i in self.test_class_letters])
+        print('Training Image Count:',
+              sum([len(self.training_class_letters[i]) for i in sorted(self.training_class_letters.keys())]))
+        print('Test Image Count:', sum([len(self.test_class_letters[i]) for i in self.test_class_letters]))
 
 
 def segment(pth):
