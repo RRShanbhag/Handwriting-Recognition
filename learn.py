@@ -183,24 +183,32 @@ class HandwritingRecognition:
     def get_letters(cls, image, label):
         padding = (int(((image.shape[0] + int(np.ceil((image.shape[1] / len(label)) *
                                                       ((len(label) - 1) if len(label) > 1 else 1))))
-                        - image.shape[1]) / 2) + int(image.shape[0] / 2))
+                        - image.shape[1]) / 2) + int(image.shape[0]))
         padding = padding if padding >= 0 else 0
 
         x_loc = (np.linspace(0, image.shape[1], len(label)) + np.ones(len(label)) *
                  (image.shape[1] / len(label) / 2)).astype(int)
 
-        windows = [(_x - int(np.ceil(image.shape[0] / 2)) + padding, _x + int(np.ceil(image.shape[0] / 2)) + padding)
-                   for _x in x_loc]
+        # windows = [(_x - int(np.ceil(image.shape[0] / 2)) + padding, _x + int(np.ceil(image.shape[0] / 2)) + padding)
+        #            for _x in x_loc]
+
+        windows = [(_x - int(np.ceil(image.shape[0] / 2)) + padding,
+                    _x - int(np.ceil(image.shape[0] / 2)) + padding + image.shape[0]) for _x in x_loc]
+
         image = np.concatenate((np.ones((image.shape[0], padding), dtype=image.dtype) * 255, image), axis=1)
         image = np.concatenate((image, np.ones((image.shape[0], padding), dtype=image.dtype) * 255), axis=1)
 
         image_letter_segments = {}
         for i, (x_l, x_h) in enumerate(windows):
             image_letter_segments[label[i]] = []
-            for offset in range(3):
+            for offset in range(1):
                 off_s = offset * int(image.shape[0] / 10)
-                image_letter_segments[label[i]].append(image[:, x_l - off_s:x_h - off_s])
-                image_letter_segments[label[i]].append(image[:, x_l + off_s:x_h + off_s])
+                if image[:, x_l - off_s:x_h - off_s].shape[1] == image.shape[0] and \
+                                image[:, x_l + off_s:x_h + off_s].shape[1] == image.shape[0]:
+                    image_letter_segments[label[i]].append(image[:, x_l - off_s:x_h - off_s])
+                    image_letter_segments[label[i]].append(image[:, x_l + off_s:x_h + off_s])
+                    # else:
+                    #     HandwritingRecognition.show(image[:, x_l - off_s:x_h - off_s])
 
         return image_letter_segments
 
@@ -291,22 +299,25 @@ class ConvNet:
         y_test = []
 
         for k in self.training_class_letters.keys():
-            x_train.append(self.training_class_letters[k])
-            y_train.append(ord(k))
+            for _img_ref in self.training_class_letters[k]:
+                x_train.append(np.array(_img_ref))
+                y_train.append(ord(k))
 
         x_train = np.array(x_train)
         y_train = np.array(y_train)
 
-        print(x_train.shape)
         x_train.reshape(x_train.shape[0], 1, 28, 28).astype('float32')
         y_train = np_utils.to_categorical(y_train)
+        print(x_train.shape, y_train.shape)
 
         for k in self.test_class_letters.keys():
-            x_test.append(self.test_class_letters[k])
-            y_test.append(k)
+            for _img_ref in self.test_class_letters[k]:
+                x_test.append(_img_ref)
+                y_test.append(ord(k))
 
         x_test = np.array(x_test)
         y_test = np.array(y_test)
+
         x_test.reshape(x_test.shape[0], 1, 28, 28).astype('float32')
         y_test = np_utils.to_categorical(y_test)
 
@@ -325,7 +336,10 @@ class ConvNet:
         form_count = 0
         class_images = [self.training_class_letters, self.test_class_letters]
         labels_arr = [self.training_labels, self.test_labels]
+
+        # Read the Training and Test set
         for k, dm in enumerate([self.training_image_refs, self.test_image_refs]):
+            # enumerate and iterate over the forms
             for j, form_imgs in enumerate(dm):
                 form_count += 1
                 print("Processing Image.. count:", form_count)
@@ -340,9 +354,9 @@ class ConvNet:
 
                     for letter_cls in letter_dict.keys():
                         if letter_cls in class_images[k].keys():
-                            class_images[k][letter_cls].append(letter_dict[letter_cls])
+                            class_images[k][letter_cls] += letter_dict[letter_cls]
                         else:
-                            class_images[k][letter_cls] = [letter_dict[letter_cls]]
+                            class_images[k][letter_cls] = letter_dict[letter_cls]
 
         print("Training Letters:", len(self.training_class_letters.keys()))
         print("Test Letters:", len(self.test_class_letters.keys()))
