@@ -25,11 +25,16 @@ from keras.layers.core import Dropout, Flatten, Dense
 from keras.layers.pooling import MaxPooling2D
 from keras.models import Sequential
 
-image_path = 'iamDB/data/forms1'
+CLASS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
+         'N', \
+         'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j',
+         'k' \
+    , 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z']
+image_path = 'forms1'
 
 thread_queue = Queue(10)
 
-ascii_fp = open('/home/varunbhat/workspace/ml_project/iamDB/data/ascii/words.txt')
+ascii_fp = open('ascii/words.txt')
 word_data = ascii_fp.read()
 ascii_fp.close()
 
@@ -265,11 +270,12 @@ class ConvNet:
 
     def create_model(self, classes):
         self.model = Sequential()
-        self.model.add(Convolution2D(30, 5, 5, border_mode='valid', input_shape=(1, 28, 28), activation='relu'))
+        self.model.add(
+            Convolution2D(30, 5, 5, border_mode='valid', input_shape=(1, 64, 64), activation='relu', dim_ordering='th'))
         self.model.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2)))
-        self.model.add(Convolution2D(15, 3, 3, activation='relu'))
+        self.model.add(Convolution2D(15, 3, 3, activation='relu', dim_ordering='th'))
         self.model.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2)))
-        self.model.add(Convolution2D(10, 2, 2, activation='relu'))
+        self.model.add(Convolution2D(10, 3, 3, activation='relu', dim_ordering='th'))
         self.model.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2)))
         self.model.add(Dropout(0.5))
         self.model.add(Flatten())
@@ -298,32 +304,32 @@ class ConvNet:
         x_test = []
         y_test = []
 
+        print('training keys:', self.training_class_letters.keys())
         for k in self.training_class_letters.keys():
             for _img_ref in self.training_class_letters[k]:
-                if ord(k) < 123:
+                if k in CLASS:
                     x_train.append(np.array(_img_ref))
-                    y_train.append(ord(k))
+                    y_train.append(CLASS.index(k))
 
-        x_train = np.array(x_train)
-        y_train = np.array(y_train)
-
-        x_train = x_train.reshape(x_train.shape[0], 1, 28, 28).astype('float32')
-        y_train = np_utils.to_categorical(y_train)
+        x_train = np.array(x_train, dtype='int')
+        y_train = np.array(y_train, dtype='int')
+        x_train = x_train.reshape(x_train.shape[0], 1, 64, 64).astype('float32')
+        y_train = np_utils.to_categorical(y_train, nb_classes=len(CLASS))
         print(x_train.shape, y_train.shape)
 
+        print('test keys:', self.test_class_letters.keys())
         for k in self.test_class_letters.keys():
             for _img_ref in self.test_class_letters[k]:
-                x_test.append(_img_ref)
-                y_test.append(ord(k))
+                if k in CLASS:
+                    x_test.append(_img_ref)
+                    y_test.append(CLASS.index(k))
 
-        x_test = np.array(x_test)
-        y_test = np.array(y_test)
+        x_test = np.array(x_test, dtype='int')
+        y_test = np.array(y_test, dtype='int')
 
-        x_test = x_test.reshape(x_test.shape[0], 1, 28, 28).astype('float32')
-        y_test = np_utils.to_categorical(y_test)
-
-        print(y_train.shape, y_test.shape)
-
+        x_test = x_test.reshape(x_test.shape[0], 1, 64, 64).astype('float32')
+        y_test = np_utils.to_categorical(y_test, nb_classes=len(CLASS))
+        print(x_test.shape, y_test.shape)
         self.create_model(y_train.shape[1])
 
         self.model.fit(x_train, y_train, validation_data=(x_test, y_test), nb_epoch=50, batch_size=200, verbose=2)
@@ -335,7 +341,7 @@ class ConvNet:
         scores = self.model.evaluate(x_test, y_test, verbose=0)
         print("Baseline Error: %.2f%%" % (100 - scores[1] * 100))
 
-    def format_images(self, resize=28):
+    def format_images(self, resize=64):
         form_count = 0
         class_images = [self.training_class_letters, self.test_class_letters]
         labels_arr = [self.training_labels, self.test_labels]
@@ -361,8 +367,8 @@ class ConvNet:
                         else:
                             class_images[k][letter_cls] = letter_dict[letter_cls]
 
-        print("Training Letters:", len(self.training_class_letters.keys()))
-        print("Test Letters:", len(self.test_class_letters.keys()))
+        print("Training Letters:", self.training_class_letters.keys())
+        print("Test Letters:", self.test_class_letters.keys())
         print('Training Image Count:',
               sum([len(self.training_class_letters[i]) for i in sorted(self.training_class_letters.keys())]))
         print('Test Image Count:', sum([len(self.test_class_letters[i]) for i in self.test_class_letters]))
