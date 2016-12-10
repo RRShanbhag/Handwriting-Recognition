@@ -300,13 +300,14 @@ class ConvNet:
 
         for k in self.training_class_letters.keys():
             for _img_ref in self.training_class_letters[k]:
-                x_train.append(np.array(_img_ref))
-                y_train.append(ord(k))
+                if ord(k) < 123:
+                    x_train.append(np.array(_img_ref))
+                    y_train.append(ord(k))
 
         x_train = np.array(x_train)
         y_train = np.array(y_train)
 
-        x_train.reshape(x_train.shape[0], 1, 28, 28).astype('float32')
+        x_train = x_train.reshape(x_train.shape[0], 1, 28, 28).astype('float32')
         y_train = np_utils.to_categorical(y_train)
         print(x_train.shape, y_train.shape)
 
@@ -318,8 +319,10 @@ class ConvNet:
         x_test = np.array(x_test)
         y_test = np.array(y_test)
 
-        x_test.reshape(x_test.shape[0], 1, 28, 28).astype('float32')
+        x_test = x_test.reshape(x_test.shape[0], 1, 28, 28).astype('float32')
         y_test = np_utils.to_categorical(y_test)
+
+        print(y_train.shape, y_test.shape)
 
         self.create_model(y_train.shape[1])
 
